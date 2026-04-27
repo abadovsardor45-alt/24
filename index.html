@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon Drift - Overdrive</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
+        canvas { display: block; }
+        
+        .ui { position: absolute; top: 20px; left: 20px; pointer-events: none; }
+        #dist { font-size: 50px; font-weight: 900; color: #00f2ff; text-shadow: 0 0 15px #00f2ff; }
+        .stats { font-size: 14px; color: #ff00ff; margin-top: 5px; letter-spacing: 2px; }
+
+        .game-over {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; display: none; background: rgba(0,0,0,0.9);
+            padding: 50px; border: 2px solid #ff0055; box-shadow: 0 0 50px #ff0055;
+        }
+        button {
+            padding: 15px 40px; background: #00f2ff; border: none;
+            color: #000; font-weight: bold; cursor: pointer; margin-top: 25px;
+            text-transform: uppercase; transition: 0.3s;
+        }
+        button:hover { transform: scale(1.1); box-shadow: 0 0 20px #00f2ff; }
+    </style>
+</head>
+<body>
+
+<div class="ui">
+    <div id="dist">0</div>
+    <div class="stats" id="speedDisplay">SPEED: 1.0x</div>
+</div>
+
+<div class="game-over" id="gameOver">
+    <h1 style="color:#ff0055; font-size: 40px;">SISTEMA HALOKATI</h1>
+    <p id="finalDist" style="margin: 20px 0; font-size: 20px;"></p>
+    <button onclick="location.reload()">RESTART SYSTEM</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const distEl = document.getElementById('dist');
+const speedEl = document.getElementById('speedDisplay');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let distance = 0;
+let gameActive = true;
+let gameSpeed = 6;
+let spawnRate = 0.15; // Boshlang'ich zichlik
+let obstacles = [];
+let stars = [];
+let shield = 0;
+
+// Yulduzli fon (Parallax)
+for(let i=0; i<200; i++) {
+    stars.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: Math.random() * 3,
+        layer: Math.random() * 3 + 1 // Har xil tezlik uchun
+    });
+}
+
+const player = {
+    x: canvas.width / 2,
+    y: canvas.height - 120,
+    targetX: canvas.width / 2,
+    radius: 20
+};
+
+class Entity {
+    constructor(type) {
+        this.type = type;
+        this.w = type === 'obs' ? Math.random() * 80 + 20 : 15;
+        this.h = type === 'obs' ? 15 : 15;
+        this.x = Math.random() * (canvas.width - this.w);
+        this.y = -100;
+        
+        if(type === 'obs') {
+            this.color = `hsl(${Math.random() * 40 + 340}, 100%, 50%)`; // Neon qizil/pushti
+        } else if(type === 'shield') {
+            this.color = '#00f2ff'; // Qalqon
+        } else {
+            this.color = '#ff00ff'; // Bonus ball
+        }
+    }
+    update() {
+        this.y += gameSpeed;
+        this.draw();
+    }
+    draw() {
+        ctx.save();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        ctx.fillStyle = this.color;
+        
+        if(this.type === 'obs') {
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+        } else {
+            // Aylana ko'rinishidagi bonuslar
+            ctx.beginPath();
+            ctx.arc(this.x + this.w/2, this.y + this.h/2, this.w/2, 0, Math.PI*2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+}
+
+function spawnLogic() {
+    if(!gameActive) return;
+
+    // Har bir kadrda element tushish ehtimoli
+    if(Math.random() < spawnRate) {
+        obstacles.push(new Entity('obs'));
+    }
+    
+    // Bonuslar kamroq tushadi
+    if(Math.random() < 0.01) {
+        obstacles.push(new Entity('shield'));
+    }
+    if(Math.random() < 0.03) {
+        obstacles.push(new Entity('score'));
+    }
+
+    // Masofa oshgan sari zichlik va tezlikni oshirish
+    spawnRate = Math.min(0.5, 0.15 + (distance / 5000)); 
+    gameSpeed = 6 + (distance / 1000);
+    speedEl.innerText = `SPEED: ${(gameSpeed/6).toFixed(1)}x`;
+
+    setTimeout(spawnLogic, 50);
+}
+
+function animate() {
+    if(!gameActive) return;
+    requestAnimationFrame(animate);
+    
+    // Tozalash effekti (Trail qoldirish uchun alpha 0.2)
+    ctx.fillStyle = 'rgba(0, 0, 5, 0.2)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Fon yulduzlari (Parallax)
+    stars.forEach(s => {
+        s.y += (gameSpeed * 0.5) / s.layer;
+        if(s.y > canvas.height) {
+            s.y = 0;
+            s.x = Math.random() * canvas.width;
+        }
+        ctx.fillStyle = `rgba(255, 255, 255, ${1 / s.layer})`;
+        ctx.fillRect(s.x, s.y, s.size, s.size);
+    });
+
+    // O'yinchi harakati (Smooth)
+    player.x += (player.targetX - player.x) * 0.2;
+
+    // Kema chizish
+    ctx.save();
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = shield > 0 ? '#00f2ff' : '#fff';
+    ctx.fillStyle = '#fff';
+    
+    // Kema tanasi
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y - 25);
+    ctx.lineTo(player.x - 20, player.y + 15);
+    ctx.lineTo(player.x + 20, player.y + 15);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Qalqon aurasi
+    if(shield > 0) {
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 40, 0, Math.PI*2);
+        ctx.strokeStyle = '#00f2ff';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 10]);
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    // To'siqlar va Bonuslar harakati
+    obstacles.forEach((obj, index) => {
+        obj.update();
+
+        // To'qnashuv (Collision Detection)
+        const dx = player.x - (obj.x + obj.w/2);
+        const dy = player.y - (obj.y + obj.h/2);
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if(dist < player.radius + obj.w/2) {
+            if(obj.type === 'obs') {
+                if(shield > 0) {
+                    shield = 0;
+                    obstacles.splice(index, 1);
+                } else {
+                    gameActive = false;
+                    document.getElementById('gameOver').style.display = 'block';
+                    document.getElementById('finalDist').innerText = `MASOFA: ${Math.floor(distance)} LY`;
+                }
+            } else if(obj.type === 'shield') {
+                shield = 1;
+                obstacles.splice(index, 1);
+            } else if(obj.type === 'score') {
+                distance += 500; // Bonus ball
+                obstacles.splice(index, 1);
+            }
+        }
+
+        // Ekrandan chiqib ketganlarni o'chirish
+        if(obj.y > canvas.height) obstacles.splice(index, 1);
+    });
+
+    distance += gameSpeed / 10;
+    distEl.innerText = Math.floor(distance);
+}
+
+// Boshqaruv
+window.addEventListener('mousemove', (e) => player.targetX = e.clientX);
+window.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    player.targetX = e.touches[0].clientX;
+}, { passive: false });
+
+spawnLogic();
+animate();
+</script>
+</body>
+</html>
